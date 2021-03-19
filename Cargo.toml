@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "concurrent",
+    "channel",
+    "sync_send",
+    "closure",
+]
