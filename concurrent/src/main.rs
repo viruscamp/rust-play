@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::thread;
 
 fn main() {
-    test5_scoped_mutex();
+    test4_arc_mutex();
 }
 // 多少线程不确定 线程运行时间不确定
 // 无法确定什么时候该结束
@@ -42,63 +42,53 @@ fn get_tid() -> ThreadId {
 
 fn test4_arc_mutex() {
     // Mutex 可以获取 &mut 不需要 RefCell
-    let a = Arc::new(Mutex::new(40));
-
-    let threads = Arc::new(Mutex::new(Vec::<JoinHandle<()>>::new()));
-
+    let data = Arc::new(Mutex::new(40));
+    let join_handles = Arc::new(Mutex::new(Vec::<JoinHandle<()>>::new()));
     
     for _ in 0..3 {
-        let a = a.clone();
+        let join_handle = {
+            let data = data.clone();
+            let join_handles = join_handles.clone();
 
-        let threads1 = threads.clone();
+            thread::spawn(move || {
+                let tid = get_tid();
+                let mut number = data.lock().unwrap();
 
-        let th = thread::spawn(move || {
-            let id = get_tid();
-            let mut number = a.lock().unwrap();
+                println!("thread {:?} data={}", tid, number);
+                *number += 1;
+                println!("thread {:?} data++={}", tid, number);
 
-            println!("thread {:?} a={}", id, number);
-            *number += 1;
-            println!("thread {:?} a++={}", id, number);
+                for _ in 0..3 {
+                    let data = data.clone();
 
-            for _ in 0..3 {
-                let a = a.clone();
+                    let join_handle = thread::spawn(move || {
+                        let tid = get_tid();
+                        let mut number = data.lock().unwrap();
 
-                let threads2 = threads1.clone();
-        
-                let th = thread::spawn(move || {
-                    let id = get_tid();
-                    let mut number = a.lock().unwrap();
-
-                    thread::sleep(Duration::new(0,5));
-        
-                    println!("thread {:?} a={}", id, number);
-                    *number += 1;
-                    println!("thread {:?} a++={}", id, number);
-                }); 
-
-                let mut threads = threads1.lock().unwrap();
-                threads.push(th);
-            }
-        });
-        let mut threads = threads.lock().unwrap();
-        threads.push(th);
+                        thread::sleep(Duration::new(0,500));
+            
+                        println!("thread {:?} data={}", tid, number);
+                        *number += 1;
+                        println!("thread {:?} data++={}", tid, number);
+                    });
+                    join_handles.lock().unwrap().push(join_handle);
+                }
+            })
+        };
+        join_handles.lock().unwrap().push(join_handle);
     }
 
     let mut thread_count = 0;
-    loop {
-        // 下面两种写法会导致 lock 有效期包括 join 导致死锁
-        // if let Some(th) = threads.lock().unwrap().pop() {
-        // while let Some(th) = threads.lock().unwrap().pop() {
-        let th = threads.lock().unwrap().pop();
-        if let Some(th) = th {
-            th.join();
-            thread_count += 1;
-        } else {
-            break;
-        }
+    while let Some(join_handle) = {
+        //join_handles.lock().unwrap().pop() // 1. 死锁
+        let x = join_handles.lock().unwrap().pop(); x // 2. 未死锁 1和2有什么区别？
+        //let mut join_handles = join_handles.lock().unwrap(); join_handles.pop() // 3. 未死锁
+    } {
+        join_handle.join().unwrap();
+        thread_count += 1;
     }
 
-    let a: i32 = *a.lock().unwrap();
+    let a: i32 = *data.lock().unwrap();
     println!("end a={} thread_count={}", a, thread_count);
 }
 
