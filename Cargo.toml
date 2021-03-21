@@ -6,4 +6,5 @@ members = [
     "sync_send",
     "closure",
     "dead_lock",
+    "reentrant_lock",
 ]
