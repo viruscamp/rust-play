@@ -29,11 +29,13 @@ fn main() -> Result<(), Error> {
         match ss {
             TcpData::Connected(stream) => {
                 let tx = tx.clone();
-                tp.execute(move || {
+                let handler = move || {
                     if let RequestResult::Quit = handle_connection(stream) {
                         tx.send(TcpData::Quit);
                     }
-                });
+                };
+                tp.execute(handler);
+                //thread::spawn(handler);
             }
             TcpData::Quit => { break; }
         }
