@@ -8,4 +8,6 @@ members = [
     "test_box_fn",
     "play",
     "http-server",
+    "dead_lock",
+    "reentrant_lock",
 ]
