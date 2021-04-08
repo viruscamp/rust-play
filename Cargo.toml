@@ -4,5 +4,8 @@ members = [
     "concurrent",
     "channel",
     "sync_send",
-    "closure",
+    "closure_test",
+    "test_box_fn",
+    "play",
+    "http-server",
 ]

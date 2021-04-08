@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::thread;
 
 fn main() {
-    test5_scoped_mutex();
+    test4_arc_mutex();
 }
 // 多少线程不确定 线程运行时间不确定
 // 无法确定什么时候该结束
@@ -85,17 +85,15 @@ fn test4_arc_mutex() {
     }
 
     let mut thread_count = 0;
-    loop {
-        // 下面两种写法会导致 lock 有效期包括 join 导致死锁
-        // if let Some(th) = threads.lock().unwrap().pop() {
-        // while let Some(th) = threads.lock().unwrap().pop() {
-        let th = threads.lock().unwrap().pop();
-        if let Some(th) = th {
-            th.join();
-            thread_count += 1;
-        } else {
-            break;
-        }
+    // 下面两种写法会导致 lock 有效期包括 join 导致死锁
+    // if let Some(th) = threads.lock().unwrap().pop() {
+    // while let Some(th) = threads.lock().unwrap().pop() {
+    while let Some(th) = {
+        let x = threads.lock().unwrap().pop();
+        x
+     } {
+        th.join();
+        thread_count += 1;
     }
 
     let a: i32 = *a.lock().unwrap();
@@ -182,8 +180,10 @@ fn test6_lazy_static_mutex() {
 }
 
 fn test7_message_channel() {
+    // 结果消息
     let (tx1, rx1) = mpsc::channel::<i32>();
 
+    // 启动消息
     let (tx2, rx2) = mpsc::channel::<i32>();
     let arx2 = Arc::new(Mutex::new(rx2));
 
@@ -219,14 +219,12 @@ fn test7_message_channel() {
         });
     }
 
+    drop(tx1);
     let mut recv_count = 0;
-    loop {
-        let msg = rx1.recv();
-        println!("Got: {}", msg.unwrap());
+    while let Ok(msg) = rx1.recv() {
+        println!("Got: {}", msg);
         recv_count += 1;
-        if recv_count == 12 {
-            break;
-        }
     }
-    println!("end");
+
+    println!("end recv_count={}", recv_count);
 }
