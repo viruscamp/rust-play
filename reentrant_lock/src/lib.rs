@@ -1,5 +1,7 @@
 pub mod reentrant_lock;
 
+pub use crate::reentrant_lock::*;
+
 extern crate lockfree;
 
 // #[macro_use]
