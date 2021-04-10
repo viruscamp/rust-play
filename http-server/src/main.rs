@@ -1,7 +1,7 @@
 mod thread_pool;
 use thread_pool::ThreadPool;
 
-use std::{io::{BufRead, BufReader, Error, Write}, net::{TcpListener, TcpStream}, sync::mpsc::channel, thread, time::Duration};
+use std::{fs::File, io::{BufRead, BufReader, Error, ErrorKind, Read, Write}, net::{TcpListener, TcpStream}, path::Path, sync::mpsc::channel, thread, time::Duration};
 
 fn main() -> Result<(), Error> {
     println!("http-server starting");
@@ -15,7 +15,7 @@ fn main() -> Result<(), Error> {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
-                        tx.send(TcpData::Connected(stream));
+                        tx.send(TcpData::Connected(stream)).unwrap_or_default();
                     }
                     Err(_) => { /* connection failed */ }
                 }
@@ -29,15 +29,21 @@ fn main() -> Result<(), Error> {
         match ss {
             TcpData::Connected(stream) => {
                 let tx = tx.clone();
-                let handler = move || {
-                    if let RequestResult::Quit = handle_connection(stream) {
-                        tx.send(TcpData::Quit);
+                let handler = move || match handle_connection(stream) {
+                    Ok(RequestResult::Quit) => {
+                        tx.send(TcpData::Quit).unwrap_or_default();
                     }
+                    Err(err) => {
+                        println!("error: {}", err);
+                    }
+                    _ => {}
                 };
                 tp.execute(handler);
                 //thread::spawn(handler);
             }
-            TcpData::Quit => { break; }
+            TcpData::Quit => {
+                break;
+            }
         }
     }
 
@@ -52,40 +58,79 @@ enum TcpData {
 
 enum RequestResult {
     Ok,
-    Err,
     Quit,
 }
 
-fn handle_connection(mut stream: TcpStream) -> RequestResult {
+fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
     let mut ins = BufReader::new(stream);
     let mut str = String::new();
-    ins.read_line(&mut str);
+    ins.read_line(&mut str)?;
 
     let strsubs: Vec<_> = str.split(" ").collect();
     if strsubs.len() < 3 {
-        println!("http request error");
-        return RequestResult::Err;
+        return Err(Error::new(ErrorKind::InvalidInput, "http request format error"));
     }
     let method = strsubs[0];
-    let path = strsubs[1];
+    let uri = strsubs[1];
 
-    println!("method: {} path: {}", method, path);
+    println!("method: {} uri: {}", method, uri);
 
-    if path == "/sleep" {
-        thread::sleep(Duration::new(8, 0));
+    let (path, query) = match uri.split_once("?") {
+        Some(a) => a,
+        None => (uri, ""),
+    };
+
+    if query == "sleep" {
+        let now = std::time::Instant::now();
+        thread::sleep(Duration::new(20, 0));
+        println!("sleep for {} seconds", now.elapsed().as_secs());
     }
 
     stream = ins.into_inner();
-    write!(stream, r#"HTTP/1.1 200 OK
+
+    if path == "/" {
+        write!(stream, r#"HTTP/1.1 200 OK
 
 <html>
 <body>
-{}
+<h1>Welcom to {}</h1>
 </body>
-</html>"#, path);
+</html>"#, uri)?;
+    } else {
+        let root = Path::new("E:\\");
+        let fullpath = match path.strip_prefix("/") {
+            Some(p) => root.join(p),
+            None => root.join(path),
+        };
+        match File::open(&fullpath) {
+            Ok(mut f) => {
+                println!("File {:?} opened", fullpath);
+                write!(stream, "HTTP/1.1 200 OK\n\n")?;
+                let mut buf = [0 as u8; 1024];
+                loop {
+                    let len = f.read(&mut buf)?;
+                    if len == 0 {
+                        break;
+                    }
+                    stream.write(&buf[..len])?;
+                }
+            }
+            Err(err) => {
+                write!(stream, r#"HTTP/1.1 404 NOT FOUND
 
-    if path == "/quit" {
-        return RequestResult::Quit;
+<html>
+<body>
+<h1>not found: {}</h1>
+<span>{}</span>
+</body>
+</html>"#, uri, err)?;
+            }
+        }
     }
-    return RequestResult::Ok;
+    stream.flush()?;
+
+    if query == "quit" {
+        return Ok(RequestResult::Quit);
+    }
+    return Ok(RequestResult::Ok);
 }
