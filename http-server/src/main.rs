@@ -4,13 +4,13 @@ use std::thread;
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
 use std::path::Path;
+use std::sync::mpsc;
 use std::fs::File;
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write, BufRead, BufReader};
-use std::sync::mpsc;
 
 fn main() -> Result<(), Error> {
-    println!("http-server starting");
+    println!("http-server using threadpool starting");
 
     let (tx, rx) = mpsc::channel::<QuitMessage>();
 
@@ -42,7 +42,7 @@ fn main() -> Result<(), Error> {
         }
     });
 
-    rx.recv().unwrap();
+    rx.recv().unwrap_or(QuitMessage);
     println!("http-server quitting");
     Ok(())
 }
