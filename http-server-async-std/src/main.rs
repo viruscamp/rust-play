@@ -7,12 +7,16 @@ use async_std::fs::File;
 use async_std::net::{TcpListener, TcpStream};
 use async_std::io::BufReader;
 
+use async_std::task::spawn;
+use async_std::task::sleep;
+use async_std::io::copy as stream_copy;
+
 fn main() -> Result<(), Error> {
     println!("http-server using async-std starting");
 
     let (tx, rx) = mpsc::channel::<QuitMessage>();
 
-    async_std::task::spawn(async move {
+    spawn(async move {
         if let Ok(listener) = TcpListener::bind("127.0.0.1:20085").await {
             loop {
                 match listener.accept().await {
@@ -29,7 +33,7 @@ fn main() -> Result<(), Error> {
                                 _ => {}
                             }
                         };
-                        async_std::task::spawn(job);
+                        spawn(job);
                     },
                     Err(_) => { /* connection failed */ }
                 }
@@ -73,7 +77,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error
 
     if query == "sleep" {
         let now = std::time::Instant::now();
-        async_std::task::sleep(Duration::new(20, 0)).await;
+        sleep(Duration::new(20, 0)).await;
         println!("sleep for {} seconds", now.elapsed().as_secs());
     }
 
@@ -99,7 +103,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error
                 println!("File {:?} opened", fullpath);
                 let str = "HTTP/1.1 200 OK\n\n";
                 stream.write_all(str.as_bytes()).await?;
-                async_std::io::copy(&mut f, &mut stream).await?;
+                stream_copy(&mut f, &mut stream).await?;
             }
             Err(err) => {
                 let str = format!(r#"HTTP/1.1 404 NOT FOUND

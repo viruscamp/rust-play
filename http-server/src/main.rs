@@ -9,12 +9,15 @@ use std::fs::File;
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write, BufRead, BufReader};
 
+use thread::spawn;
+use thread::sleep;
+
 fn main() -> Result<(), Error> {
     println!("http-server using threadpool starting");
 
     let (tx, rx) = mpsc::channel::<QuitMessage>();
 
-    thread::spawn(move || {
+    spawn(move || {
         if let Ok(listener) = TcpListener::bind("127.0.0.1:20083") {
             let mut tp = ThreadPool::new(2);
             for stream in listener.incoming() {
@@ -31,7 +34,7 @@ fn main() -> Result<(), Error> {
                             _ => {}
                         };
                         tp.execute(job);
-                        //thread::spawn(job);
+                        //spawn(job);
                     }
                     Err(_) => { /* connection failed */ }
                 }
@@ -75,7 +78,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
 
     if query == "sleep" {
         let now = std::time::Instant::now();
-        thread::sleep(Duration::new(20, 0));
+        sleep(Duration::new(20, 0));
         println!("sleep for {} seconds", now.elapsed().as_secs());
     }
 

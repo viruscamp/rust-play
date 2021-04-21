@@ -6,13 +6,17 @@ use tokio::fs::File;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, AsyncBufRead, AsyncBufReadExt, BufReader};
 
+use tokio::spawn;
+use tokio::time::sleep;
+use tokio::io::copy as stream_copy;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("http-server using tokio starting");
 
     let (tx, mut rx) = mpsc::channel::<QuitMessage>(32);
 
-    tokio::spawn(async move {
+    spawn(async move {
         if let Ok(listener) = TcpListener::bind("127.0.0.1:20084").await {
             loop {
                 match listener.accept().await {
@@ -29,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 _ => {}
                             }
                         };
-                        tokio::spawn(job);
+                        spawn(job);
                     },
                     Err(_) => { /* connection failed */ }
                 }
@@ -73,7 +77,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error
 
     if query == "sleep" {
         let now = std::time::Instant::now();
-        tokio::time::sleep(Duration::new(20, 0)).await;
+        sleep(Duration::new(20, 0)).await;
         println!("sleep for {} seconds", now.elapsed().as_secs());
     }
 
@@ -99,7 +103,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error
                 println!("File {:?} opened", fullpath);
                 let str = "HTTP/1.1 200 OK\n\n";
                 stream.write_all(str.as_bytes()).await?;
-                tokio::io::copy(&mut f, &mut stream).await?;
+                stream_copy(&mut f, &mut stream).await?;
             }
             Err(err) => {
                 let str = format!(r#"HTTP/1.1 404 NOT FOUND
