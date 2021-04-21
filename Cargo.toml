@@ -10,4 +10,6 @@ members = [
     "http-server",
     "dead_lock",
     "reentrant_lock",
+    "http-server-tokio",
+    "http-server-async-std",
 ]

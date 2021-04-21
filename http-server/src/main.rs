@@ -1,60 +1,53 @@
 mod thread_pool;
 use thread_pool::ThreadPool;
-
-use std::{fs::File, io::{BufRead, BufReader, Error, ErrorKind, Read, Write}, net::{TcpListener, TcpStream}, path::Path, sync::mpsc::channel, thread, time::Duration};
+use std::thread;
+use std::io::{Error, ErrorKind};
+use std::time::Duration;
+use std::path::Path;
+use std::fs::File;
+use std::net::{TcpListener, TcpStream};
+use std::io::{Read, Write, BufRead, BufReader};
+use std::sync::mpsc;
 
 fn main() -> Result<(), Error> {
     println!("http-server starting");
 
-    let (tx, rx) = channel::<TcpData>();
+    let (tx, rx) = mpsc::channel::<QuitMessage>();
 
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let listener = TcpListener::bind("127.0.0.1:83").unwrap();
+    thread::spawn(move || {
+        if let Ok(listener) = TcpListener::bind("127.0.0.1:20083") {
+            let mut tp = ThreadPool::new(2);
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
-                        tx.send(TcpData::Connected(stream)).unwrap_or_default();
+                        let tx = tx.clone();
+                        let job = move || match handle_connection(stream) {
+                            Ok(RequestResult::Quit) => {
+                                tx.send(QuitMessage).unwrap_or_default();
+                            }
+                            Err(err) => {
+                                println!("error: {}", err);
+                            }
+                            _ => {}
+                        };
+                        tp.execute(job);
+                        //thread::spawn(job);
                     }
                     Err(_) => { /* connection failed */ }
                 }
             }
-        });
-    }
-
-    let mut tp = ThreadPool::new(2);
-
-    for ss in rx.iter() {
-        match ss {
-            TcpData::Connected(stream) => {
-                let tx = tx.clone();
-                let handler = move || match handle_connection(stream) {
-                    Ok(RequestResult::Quit) => {
-                        tx.send(TcpData::Quit).unwrap_or_default();
-                    }
-                    Err(err) => {
-                        println!("error: {}", err);
-                    }
-                    _ => {}
-                };
-                tp.execute(handler);
-                //thread::spawn(handler);
-            }
-            TcpData::Quit => {
-                break;
-            }
+        } else {
+            println!("http-server starting failed");
+            tx.send(QuitMessage).unwrap();
         }
-    }
+    });
 
+    rx.recv().unwrap();
     println!("http-server quitting");
     Ok(())
 }
 
-enum TcpData {
-    Connected(TcpStream),
-    Quit,
-}
+struct QuitMessage;
 
 enum RequestResult {
     Ok,
@@ -106,14 +99,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
             Ok(mut f) => {
                 println!("File {:?} opened", fullpath);
                 write!(stream, "HTTP/1.1 200 OK\n\n")?;
-                let mut buf = [0 as u8; 1024];
-                loop {
-                    let len = f.read(&mut buf)?;
-                    if len == 0 {
-                        break;
-                    }
-                    stream.write(&buf[..len])?;
-                }
+                stream_copy(&mut f, &mut stream)?;
             }
             Err(err) => {
                 write!(stream, r#"HTTP/1.1 404 NOT FOUND
@@ -133,4 +119,16 @@ fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
         return Ok(RequestResult::Quit);
     }
     return Ok(RequestResult::Ok);
+}
+
+fn stream_copy(r: &mut impl Read, w: &mut impl Write) -> Result<usize, Error> {
+    let mut buf = [0u8; 1024];
+    let mut sz: usize = 0;
+    return loop {
+        let len = r.read(&mut buf)?;
+        //if len == 0 { break Ok(sz) } // 每次都会多读一个 0
+        w.write(&buf[..len])?;
+        sz += len;
+        if len < buf.len() { break Ok(sz) } // 大部分情况 ok , 输入长度 = buflen*n 时 多读多写一个 0
+    }
 }
