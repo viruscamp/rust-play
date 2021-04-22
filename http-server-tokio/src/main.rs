@@ -4,7 +4,7 @@ use std::path::Path;
 use tokio::sync::mpsc;
 use tokio::fs::File;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, AsyncBufRead, AsyncBufReadExt, BufReader};
+use tokio::io::{BufReader, AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, AsyncBufRead, AsyncBufReadExt};
 
 use tokio::spawn;
 use tokio::time::sleep;
@@ -14,43 +14,71 @@ use tokio::io::copy as stream_copy;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("http-server using tokio starting");
 
-    let (tx, mut rx) = mpsc::channel::<QuitMessage>(32);
+    let (tx, mut rx) = mpsc::unbounded_channel::<DispatchMessage>();
 
-    spawn(async move {
-        if let Ok(listener) = TcpListener::bind("127.0.0.1:20084").await {
-            loop {
-                match listener.accept().await {
-                    Ok((socket, _)) => {
-                        let tx = tx.clone();
-                        let job = async move {
-                            match handle_connection(socket).await {
-                                Ok(RequestResult::Quit) => {
-                                    tx.send(QuitMessage).await;
-                                }
-                                Err(err) => {
-                                    println!("error: {}", err);
-                                }
-                                _ => {}
-                            }
-                        };
-                        spawn(job);
-                    },
-                    Err(_) => { /* connection failed */ }
+    let port = 20084;
+    let tx1 = tx.clone();
+    match TcpListener::bind(("127.0.0.1", port)).await {
+        Ok(listener)  => {
+            spawn(async move {
+                // listen loop
+                loop {
+                    match listener.accept().await {
+                        Ok((stream, _)) => {
+                            tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
+                        },
+                        Err(_) => { /* connection failed */ }
+                    }
                 }
-            }
-        } else {
-            println!("http-server starting failed");
-            tx.send(QuitMessage).await;
+            });
         }
-    });
+        Err(err) => {
+            println!("http-server starting failed");
+            //tx1.send(DispatchMessage::Quit).unwrap();
+            //return Err(Box::new(err)); // fail
+            //return Err(Box::<dyn std::error::Error>::new(err)); // fail too
+            let err: Box<dyn std::error::Error> = Box::new(err);
+            return Err(err);
+        }
+    }
 
-    rx.recv().await;
+    // dispatch loop
+    while let Some(dispatch_message) = rx.recv().await {
+        match dispatch_message {
+            DispatchMessage::Connected(stream) => {
+                let tx = tx.clone();
+                let job = async move {
+                    match handle_connection(stream).await {
+                        Ok(RequestResult::Quit) => {
+                            tx.send(DispatchMessage::Quit).unwrap_or_default();
+                        }
+                        Err(err) => {
+                            println!("error: {}", err);
+                        }
+                        _ => {}
+                    }
+                };
+                spawn(job);
+            }
+            DispatchMessage::Start => {}
+            DispatchMessage::Quit => {
+                break;
+            }
+        }
+    }
+
     println!("http-server quitting");
     Ok(())
 }
 
-struct QuitMessage;
+#[derive(Debug)]
+enum DispatchMessage {
+    Connected(TcpStream),
+    Quit,
+    Start,
+}
 
+#[derive(Debug)]
 enum RequestResult {
     Ok,
     Quit,

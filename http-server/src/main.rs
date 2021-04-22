@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::fs::File;
 use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write, BufRead, BufReader};
+use std::io::{BufReader, Read, Write, BufRead};
 
 use thread::spawn;
 use thread::sleep;
@@ -16,17 +16,18 @@ fn main() -> Result<(), Error> {
     println!("http-server using threadpool starting");
 
     let (tx, rx) = mpsc::channel::<DispatchMessage>();
+
     let port = 20083;
+    let tx1 = tx.clone();
     match TcpListener::bind(("127.0.0.1", port)) {
         Ok(listener) => {
-            let tx = tx.clone();
             spawn(move || {
                 // listen loop
                 // TODO how to exit
                 for stream in listener.incoming() {
                     match stream {
                         Ok(stream) => {
-                            tx.send(DispatchMessage::Connected(stream)).unwrap_or_default();
+                            tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
                         }
                         Err(_) => { /* connection failed */ }
                     }
@@ -35,28 +36,30 @@ fn main() -> Result<(), Error> {
         }
         Err(err) => {
             println!("http-server starting failed");
-            //tx.send(DispatchMessage::Quit).unwrap(); // useless
+            //tx1.send(DispatchMessage::Quit).unwrap(); // useless
             return Err(err);
         }
     }
 
     let mut tp = ThreadPool::new(2);
     // dispatch loop
-    for dispatch_message in rx.iter() {
+    while let Ok(dispatch_message) = rx.recv() {
         match dispatch_message {
             DispatchMessage::Connected(stream) => {
                 let tx = tx.clone();
-                let handler = move || match handle_connection(stream) {
-                    Ok(RequestResult::Quit) => {
-                        tx.send(DispatchMessage::Quit).unwrap_or_default();
+                let job = move || {
+                    match handle_connection(stream) {
+                        Ok(RequestResult::Quit) => {
+                            tx.send(DispatchMessage::Quit).unwrap_or_default();
+                        }
+                        Err(err) => {
+                            println!("error: {}", err);
+                        }
+                        _ => {}
                     }
-                    Err(err) => {
-                        println!("error: {}", err);
-                    }
-                    _ => {}
                 };
-                tp.execute(handler);
-                //spawn(handler);
+                tp.execute(job);
+                //spawn(job);
             }
             DispatchMessage::Start => {}
             DispatchMessage::Quit => {
@@ -69,12 +72,14 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug)]
 enum DispatchMessage {
     Connected(TcpStream),
     Quit,
     Start,
 }
 
+#[derive(Debug)]
 enum RequestResult {
     Ok,
     Quit,
