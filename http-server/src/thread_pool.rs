@@ -72,8 +72,13 @@ impl Worker {
     fn new(id: usize, rx: Arc<Mutex<Receiver<JobMessage>>>) -> Worker {
         let thread = thread::spawn(move || {
             loop {
-                // 没有消息时会一直持锁
-                let msg = rx.lock().unwrap().recv();
+                // worker 有3种状态
+                // 1. 等锁 0..n
+                let rx = rx.lock().unwrap();
+                // 2. 持锁 0..=1 等消息 没有消息时会一直持锁
+                let msg = rx.recv();
+                // drop(rx); // 解锁 由 NLL 处理
+                // 3. 处理消息 0..=n
                 match msg {
                     Ok(JobMessage::Job(job)) => {
                         println!("Worker {} got job", id);

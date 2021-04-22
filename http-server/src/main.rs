@@ -15,42 +15,65 @@ use thread::sleep;
 fn main() -> Result<(), Error> {
     println!("http-server using threadpool starting");
 
-    let (tx, rx) = mpsc::channel::<QuitMessage>();
-
-    spawn(move || {
-        if let Ok(listener) = TcpListener::bind("127.0.0.1:20083") {
-            let mut tp = ThreadPool::new(2);
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        let tx = tx.clone();
-                        let job = move || match handle_connection(stream) {
-                            Ok(RequestResult::Quit) => {
-                                tx.send(QuitMessage).unwrap_or_default();
-                            }
-                            Err(err) => {
-                                println!("error: {}", err);
-                            }
-                            _ => {}
-                        };
-                        tp.execute(job);
-                        //spawn(job);
+    let (tx, rx) = mpsc::channel::<DispatchMessage>();
+    let port = 20083;
+    match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(listener) => {
+            let tx = tx.clone();
+            spawn(move || {
+                // listen loop
+                // TODO how to exit
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            tx.send(DispatchMessage::Connected(stream)).unwrap_or_default();
+                        }
+                        Err(_) => { /* connection failed */ }
                     }
-                    Err(_) => { /* connection failed */ }
                 }
-            }
-        } else {
-            println!("http-server starting failed");
-            tx.send(QuitMessage).unwrap();
+            });
         }
-    });
+        Err(err) => {
+            println!("http-server starting failed");
+            //tx.send(DispatchMessage::Quit).unwrap(); // useless
+            return Err(err);
+        }
+    }
 
-    rx.recv().unwrap_or(QuitMessage);
+    let mut tp = ThreadPool::new(2);
+    // dispatch loop
+    for dispatch_message in rx.iter() {
+        match dispatch_message {
+            DispatchMessage::Connected(stream) => {
+                let tx = tx.clone();
+                let handler = move || match handle_connection(stream) {
+                    Ok(RequestResult::Quit) => {
+                        tx.send(DispatchMessage::Quit).unwrap_or_default();
+                    }
+                    Err(err) => {
+                        println!("error: {}", err);
+                    }
+                    _ => {}
+                };
+                tp.execute(handler);
+                //spawn(handler);
+            }
+            DispatchMessage::Start => {}
+            DispatchMessage::Quit => {
+                break;
+            }
+        }
+    }
+
     println!("http-server quitting");
     Ok(())
 }
 
-struct QuitMessage;
+enum DispatchMessage {
+    Connected(TcpStream),
+    Quit,
+    Start,
+}
 
 enum RequestResult {
     Ok,
@@ -58,7 +81,7 @@ enum RequestResult {
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
-    let mut ins = BufReader::new(stream);
+    let mut ins = BufReader::new(&stream);
     let mut str = String::new();
     ins.read_line(&mut str)?;
 
@@ -81,8 +104,6 @@ fn handle_connection(mut stream: TcpStream) -> Result<RequestResult, Error> {
         sleep(Duration::new(20, 0));
         println!("sleep for {} seconds", now.elapsed().as_secs());
     }
-
-    stream = ins.into_inner();
 
     if path == "/" {
         write!(stream, r#"HTTP/1.1 200 OK
