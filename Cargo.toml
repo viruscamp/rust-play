@@ -12,4 +12,5 @@ members = [
     "reentrant_lock",
     "http-server-tokio",
     "http-server-async-std",
+    "http-server-socket2",
 ]
