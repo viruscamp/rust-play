@@ -4,7 +4,6 @@ use std::path::Path;
 use async_std::fs::File;
 use async_std::net::{TcpListener, TcpStream};
 use async_std::io::{BufReader, prelude::*};
-use futures::stream::StreamExt;
 use futures::{select, FutureExt};
 
 use async_std::task::spawn;
@@ -18,25 +17,24 @@ async fn main() -> Result<(), Error> {
     let (tx, rx) = async_std::channel::unbounded::<DispatchMessage>();
     let (kill_switch, kill_switch_receiver) = async_std::channel::bounded::<()>(1);
 
+    let local_host = "127.0.0.1";
     let port = 20085;
     let tx1 = tx.clone();
 
-    let accept_loop_join = match TcpListener::bind(("127.0.0.1", port)).await {
+    let accept_loop_join = match TcpListener::bind((local_host, port)).await {
         Ok(listener)  => {
+            println!("server started at http://{}:{}/", local_host, port);
             spawn(async move {
                 // listen loop
-                let mut kill_switch_receiver = kill_switch_receiver.fuse();
-                let mut incoming_connections = listener.incoming().fuse();
                 loop {
                     select! {
-                        connected = incoming_connections.next().fuse() => match connected {
-                            Some(Ok(stream)) => {
+                        connected = listener.accept().fuse() => match connected {
+                            Ok((stream,_)) => {
                                 tx1.send(DispatchMessage::Connected(stream)).await.unwrap_or_default();
                             }
-                            Some(Err(_)) => { /* connection failed */ }
-                            None => {}
+                            Err(_) => { /* connection failed */ }
                         },
-                        _ = kill_switch_receiver.next().fuse() => {
+                        _ = kill_switch_receiver.recv().fuse() => {
                             println!("terminating accept loop");
                             break;
                         },

@@ -19,13 +19,15 @@ fn main() -> Result<(), Error> {
 
     let (tx, rx) = mpsc::channel::<DispatchMessage>();
 
+    let local_host = "127.0.0.1";
     let port = 20086;
     let tx1 = tx.clone();
 
-    let (socket, accept_loop) = match create_socket2("127.0.0.1", port) {
+    let (socket, accept_loop) = match create_socket2(local_host, port) {
         Ok(socket) => {
             let socket = Arc::new(socket);
             let socket1 = socket.clone();
+            println!("server started at http://{}:{}/", local_host, port);
             let accept_loop = spawn(move || {
                 loop {
                     let connected = socket.accept();

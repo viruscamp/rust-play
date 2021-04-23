@@ -17,11 +17,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, mut rx) = mpsc::unbounded_channel::<DispatchMessage>();
     let (kill_switch, kill_switch_receiver) = tokio::sync::oneshot::channel::<()>();
 
+    let local_host = "127.0.0.1";
     let port = 20084;
     let tx1 = tx.clone();
 
-    let accept_loop_join = match TcpListener::bind(("127.0.0.1", port)).await {
+    let accept_loop_join = match TcpListener::bind((local_host, port)).await {
         Ok(listener)  => {
+            println!("server started at http://{}:{}/", local_host, port);
             spawn(async move {
                 // listen loop
                 select! {

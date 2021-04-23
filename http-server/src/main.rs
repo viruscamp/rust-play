@@ -17,10 +17,12 @@ fn main() -> Result<(), Error> {
 
     let (tx, rx) = mpsc::channel::<DispatchMessage>();
 
+    let local_host = "127.0.0.1";
     let port = 20083;
     let tx1 = tx.clone();
-    match TcpListener::bind(("127.0.0.1", port)) {
+    match TcpListener::bind((local_host, port)) {
         Ok(listener) => {
+            println!("server started at http://{}:{}/", local_host, port);
             spawn(move || {
                 // listen loop
                 // TODO how to exit
