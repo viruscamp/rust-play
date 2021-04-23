@@ -1,51 +1,65 @@
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
 use std::path::Path;
-use std::sync::mpsc;
 use async_std::fs::File;
 use async_std::net::{TcpListener, TcpStream};
 use async_std::io::{BufReader, prelude::*};
+use futures::stream::StreamExt;
+use futures::{select, FutureExt};
 
 use async_std::task::spawn;
 use async_std::task::sleep;
 use async_std::io::copy as stream_copy;
 
-fn main() -> Result<(), Error> {
+#[async_std::main]
+async fn main() -> Result<(), Error> {
     println!("http-server using async-std starting");
 
-    let (tx, rx) = mpsc::channel::<DispatchMessage>();
+    let (tx, rx) = async_std::channel::unbounded::<DispatchMessage>();
+    let (kill_switch, kill_switch_receiver) = async_std::channel::bounded::<()>(1);
 
     let port = 20085;
     let tx1 = tx.clone();
-    spawn(async move {
-        match TcpListener::bind(("127.0.0.1", port)).await {
-            Ok(listener)  => {
+
+    let accept_loop_join = match TcpListener::bind(("127.0.0.1", port)).await {
+        Ok(listener)  => {
+            spawn(async move {
                 // listen loop
+                let mut kill_switch_receiver = kill_switch_receiver.fuse();
+                let mut incoming_connections = listener.incoming().fuse();
                 loop {
-                    match listener.accept().await {
-                        Ok((stream, _)) => {
-                            tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
+                    select! {
+                        connected = incoming_connections.next().fuse() => match connected {
+                            Some(Ok(stream)) => {
+                                tx1.send(DispatchMessage::Connected(stream)).await.unwrap_or_default();
+                            }
+                            Some(Err(_)) => { /* connection failed */ }
+                            None => {}
                         },
-                        Err(_) => { /* connection failed */ }
+                        _ = kill_switch_receiver.next().fuse() => {
+                            println!("terminating accept loop");
+                            break;
+                        },
                     }
                 }
-            }
-            Err(err) => {
-                println!("http-server starting failed");
-                tx1.send(DispatchMessage::Quit).unwrap();
-            }
+            })
         }
-    });
+        Err(err) => {
+            println!("http-server starting failed");
+            tx1.send(DispatchMessage::Quit).await.unwrap_or_default();
+            return Err(err);
+        }
+    };
 
     // dispatch loop
-    while let Ok(dispatch_message) = rx.recv() {
+    while let Ok(dispatch_message) = rx.recv().await {
         match dispatch_message {
             DispatchMessage::Connected(stream) => {
                 let tx = tx.clone();
                 let job = async move {
                     match handle_connection(stream).await {
                         Ok(RequestResult::Quit) => {
-                            tx.send(DispatchMessage::Quit).unwrap_or_default();
+                            tx.send(DispatchMessage::Quit).await.unwrap_or_default();
                         }
                         Err(err) => {
                             println!("error: {}", err);
@@ -61,6 +75,9 @@ fn main() -> Result<(), Error> {
             }
         }
     }
+
+    kill_switch.send(()).await;
+    accept_loop_join.await;
 
     println!("http-server quitting");
     Ok(())

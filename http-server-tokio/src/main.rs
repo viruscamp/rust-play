@@ -6,7 +6,7 @@ use tokio::fs::File;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{BufReader, AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt, AsyncBufRead, AsyncBufReadExt};
 
-use tokio::spawn;
+use tokio::{select, spawn};
 use tokio::time::sleep;
 use tokio::io::copy as stream_copy;
 
@@ -19,19 +19,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let port = 20084;
     let tx1 = tx.clone();
+
     let accept_loop_join = match TcpListener::bind(("127.0.0.1", port)).await {
         Ok(listener)  => {
             spawn(async move {
                 // listen loop
-                tokio::select! {
+                select! {
                     _ = async {
                         loop {
-                            let (stream, _) = listener.accept().await?;
-                            //tokio::spawn(async move { process(socket) });
-                            tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
-                        }        
-                        // Help the rust type inferencer out
-                        Ok::<_, Error>(())
+                            match listener.accept().await {
+                                Ok((stream, _)) => {
+                                    tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
+                                },
+                                Err(_) => { /* connection failed */ }
+                            }
+                        }
                     } => {}
                     _ = kill_switch_receiver => {
                         println!("terminating accept loop");
