@@ -15,32 +15,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("http-server using tokio starting");
 
     let (tx, mut rx) = mpsc::unbounded_channel::<DispatchMessage>();
+    let (kill_switch, kill_switch_receiver) = tokio::sync::oneshot::channel::<()>();
 
     let port = 20084;
     let tx1 = tx.clone();
-    match TcpListener::bind(("127.0.0.1", port)).await {
+    let accept_loop_join = match TcpListener::bind(("127.0.0.1", port)).await {
         Ok(listener)  => {
             spawn(async move {
                 // listen loop
-                loop {
-                    match listener.accept().await {
-                        Ok((stream, _)) => {
+                tokio::select! {
+                    _ = async {
+                        loop {
+                            let (stream, _) = listener.accept().await?;
+                            //tokio::spawn(async move { process(socket) });
                             tx1.send(DispatchMessage::Connected(stream)).unwrap_or_default();
-                        },
-                        Err(_) => { /* connection failed */ }
+                        }        
+                        // Help the rust type inferencer out
+                        Ok::<_, Error>(())
+                    } => {}
+                    _ = kill_switch_receiver => {
+                        println!("terminating accept loop");
                     }
                 }
-            });
+            })
         }
         Err(err) => {
             println!("http-server starting failed");
             //tx1.send(DispatchMessage::Quit).unwrap();
             //return Err(Box::new(err)); // fail
             //return Err(Box::<dyn std::error::Error>::new(err)); // fail too
-            let err: Box<dyn std::error::Error> = Box::new(err);
-            return Err(err);
+            return Err(Box::new(err).into());
+            //let err: Box<dyn std::error::Error> = Box::new(err);
+            //return Err(err);
         }
-    }
+    };
 
     // dispatch loop
     while let Some(dispatch_message) = rx.recv().await {
@@ -66,6 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    kill_switch.send(());
+    accept_loop_join.await;
 
     println!("http-server quitting");
     Ok(())
