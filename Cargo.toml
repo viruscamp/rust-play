@@ -13,4 +13,6 @@ members = [
     "http-server-tokio",
     "http-server-async-std",
     "http-server-socket2",
+    "http-server-compare",
+    "pin-test",
 ]
