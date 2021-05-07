@@ -37,6 +37,10 @@ path = "src/http-stop3-tokio.rs"
 name = "http-stop3-async-std"
 path = "src/http-stop3-async-std.rs"
 
+[[bin]]
+name = "http-cmd-async-std"
+path = "src/http-cmd-async-std.rs"
+
 [dependencies]
 futures = "0.3.14"
 
