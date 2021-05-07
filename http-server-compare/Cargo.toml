@@ -29,12 +29,20 @@ path = "src/http-stop2-tokio.rs"
 name = "http-stop2-async-std"
 path = "src/http-stop2-async-std.rs"
 
+[[bin]]
+name = "http-stop3-tokio"
+path = "src/http-stop3-tokio.rs"
+
+[[bin]]
+name = "http-stop3-async-std"
+path = "src/http-stop3-async-std.rs"
+
 [dependencies]
 futures = "0.3.14"
 
 [dependencies.async-std]
 version = "1.9.0"
-features = ["attributes"]
+features = ["attributes", "unstable"]
 
 [dependencies.tokio]
 version = "1.5.0"

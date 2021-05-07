@@ -14,24 +14,21 @@ async fn main() -> Result<()> {
     let local_host = "127.0.0.1";
     let port = 20083;
     let listener = TcpListener::bind((local_host, port)).await?;
-    let accept_loop = spawn(FutureExt::race(
-        async move {
-            while let Ok((stream, addr)) = listener.accept().await {
-                let kill_switch = kill_switch.clone();
-                spawn(async move {
-                    if let Ok(RequestResult::Quit) = handle_connection(stream).await {
-                        kill_switch.send(()).await;
-                    }
-                });
-            }
-        },
-        async move {
-            kill_switch_receiver.recv().await;
-        })
-    );
+    let accept_loop = spawn(async move {
+        while let Ok((stream, addr)) = listener.accept().await {
+            let kill_switch = kill_switch.clone();
+            spawn(async move {
+                if let Ok(RequestResult::Quit) = handle_connection(stream).await {
+                    kill_switch.send(()).await;
+                }
+            });
+        }
+    });
     println!("server started at http://{}:{}/ serving files in {:?}", local_host, port, std::env::current_dir().unwrap_or_default());
 
-    accept_loop.await;
+    kill_switch_receiver.recv().await;
+    accept_loop.cancel().await;
+    //accept_loop.await;
     Ok(())
 }
 

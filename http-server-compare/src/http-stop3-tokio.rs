@@ -1,37 +1,38 @@
-use async_std::task::spawn;
-use async_std::task::sleep;
-use async_std::io::{Result, Error, ErrorKind, BufReader, copy, prelude::*};
+use tokio::task::spawn;
+use tokio::time::sleep;
+use tokio::io::{Result, Error, ErrorKind, AsyncWriteExt, BufReader, AsyncBufReadExt, copy};
 use std::time::Duration;
-use async_std::channel::unbounded as channel;
-use async_std::fs::File;
-use async_std::net::{TcpListener, TcpStream};
-use async_std::prelude::{Future, FutureExt};
+use tokio::sync::mpsc::unbounded_channel as channel;
+use tokio::fs::File;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::select;
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<()> {
-    let (kill_switch, kill_switch_receiver) = channel::<()>();
+    let (kill_switch, mut kill_switch_receiver) = channel::<()>();
 
     let local_host = "127.0.0.1";
     let port = 20083;
     let listener = TcpListener::bind((local_host, port)).await?;
-    let accept_loop = spawn(FutureExt::race(
-        async move {
-            while let Ok((stream, addr)) = listener.accept().await {
-                let kill_switch = kill_switch.clone();
-                spawn(async move {
-                    if let Ok(RequestResult::Quit) = handle_connection(stream).await {
-                        kill_switch.send(()).await;
-                    }
-                });
-            }
-        },
-        async move {
-            kill_switch_receiver.recv().await;
-        })
-    );
+    let accept_loop = spawn(async move {
+        while let Ok((stream, addr)) = listener.accept().await {
+            let kill_switch = kill_switch.clone();
+            spawn(async move {
+                if let Ok(RequestResult::Quit) = handle_connection(stream).await {
+                    kill_switch.send(()).unwrap();
+                }
+            });
+        }
+    });
     println!("server started at http://{}:{}/ serving files in {:?}", local_host, port, std::env::current_dir().unwrap_or_default());
 
-    accept_loop.await;
+    kill_switch_receiver.recv().await;
+    accept_loop.abort();
+    match accept_loop.await {
+        Ok(_) => Ok(()),
+        Err(e) if e.is_cancelled() => Ok(()),
+        Err(e) => Err(e),
+    }?;
     Ok(())
 }
 
