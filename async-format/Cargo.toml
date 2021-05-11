@@ -1,0 +1,48 @@
+[package]
+name = "async-format"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "async-println"
+path = "src/async-println.rs"
+
+[[bin]]
+name = "async-println-1-fail"
+path = "src/async-println-1-fail.rs"
+
+[[bin]]
+name = "async-println-2-fail"
+path = "src/async-println-2-fail.rs"
+
+[[bin]]
+name = "async-println-3-ok"
+path = "src/async-println-3-ok.rs"
+
+[[bin]]
+name = "async-println-4-fail"
+path = "src/async-println-4-fail.rs"
+
+[[bin]]
+name = "async-println-5-fail"
+path = "src/async-println-5-fail.rs"
+
+[[bin]]
+name = "async-println-5-ok"
+path = "src/async-println-5-ok.rs"
+
+[[bin]]
+name = "async-println-my"
+path = "src/async-println-my.rs"
+
+[[bin]]
+name = "sync-format_args-fail"
+path = "src/sync-format_args-fail.rs"
+
+[dependencies]
+
+[dependencies.async-std]
+version = "1.9.0"
+features = ["attributes", "unstable"]

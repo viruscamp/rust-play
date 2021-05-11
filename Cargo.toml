@@ -15,4 +15,5 @@ members = [
     "http-server-socket2",
     "http-server-compare",
     "pin-test",
+    "async-format",
 ]
