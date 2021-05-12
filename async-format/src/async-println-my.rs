@@ -28,11 +28,9 @@ pub async fn _myprint(args: std::fmt::Arguments<'_>) {
 macro_rules! myprintln2 {
     ($($arg:tt)*) => (async {
         let mut stdout = async_std::io::stdout(); // make stdout live longer than .await
-        if let Err(e) = {
-            let x = writeln!(stdout, $($arg)*);
-            // drop Arguments<'_> and [ArgumentV1<'a>] to make them live shorter than .await
-            x
-        }.await {
+        let write_future = writeln!(stdout, $($arg)*);
+        // drop Arguments<'_> and [ArgumentV1<'a>] to make them live shorter than .await
+        if let Err(e) = write_future.await {
             panic!("failed printing to stdout: {}", e);
         }
     });
