@@ -148,7 +148,7 @@ async fn start_cmd_input_loop(cmd_sender: Sender<Command>) -> Result<()> {
                     }
                 }
                 Command::Unknown => {
-                    if (parts[0] == "restart") {
+                    if parts[0] == "restart" {
                         cmd_sender.send(Command::Stop).await;
                         cmd_sender.send(Command::Start).await;
                     } else {
