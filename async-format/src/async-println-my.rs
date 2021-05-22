@@ -11,13 +11,15 @@ macro_rules! myprintln {
     })
 }
 
-// 错的 要改 async_std::io::stdio::_print 和 async_std::io::stdio::_eprint
+// 错的， args: Arguments<'_> 创建之前创建的临时变量 [ArgumentV1<'_>] 只有此函数退出后才能被 drop 。跨 .await 了
+// 要改 async_std::io::stdio::_print 和 async_std::io::stdio::_eprint
 // 前提条件是 async_std::io::write::write_fmt::WriteFmtFuture 不再持有 Arguments<'_>
 pub async fn _myprint(args: std::fmt::Arguments<'_>) {
     let mut stdout = async_std::io::stdout(); // make stdout live longer than .await
     if let Err(e) = {
-        let x = stdout.write_fmt(args); // drop args:Arguments<'_> and [ArgumentV1<'a>] to make them live shorter than .await
-        x
+        let write_future = stdout.write_fmt(args);
+        // drop args: Arguments<'_> to make them live shorter than .await
+        write_future
     }.await {
         panic!("failed printing to stdout: {}", e);
     }
